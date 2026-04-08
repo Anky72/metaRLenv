@@ -391,8 +391,17 @@ async def step_override(request: Request):
         if obs.rounds_left <= 1 or (
             obs.current_price <= obs.market_price * 1.03
             and obs.round_number >= 5
+        ) or (
+            obs.current_price <= obs.market_price * 0.80
         ):
             raw = {"action_type": "accept", "counter_price": None}
+        elif obs.round_number < 5:
+            # Force counter for first 5 rounds regardless of LLM/heuristic output
+            if not isinstance(raw, dict) or raw.get("action_type") == "accept":
+                raw = heuristic_action(obs, supplier_held_rounds=_supplier_held_rounds)
+                raw["action_type"] = "counter"
+                if not raw.get("counter_price"):
+                    raw["counter_price"] = round(obs.market_price * 0.88, 2)
     try:
         action = NegotiationAction(**raw)
     except Exception:
