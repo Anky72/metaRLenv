@@ -1,0 +1,63 @@
+spec_version: 1
+name: procurement_negotiation
+description: >
+  B2B Procurement Negotiation Environment. An AI agent negotiates price
+  and delivery terms with suppliers across 3 tasks of increasing difficulty.
+  Real-world procurement workflows with structured actions (accept/reject/counter),
+  incomplete supplier information, and deadline pressure.
+type: environment
+runtime: docker
+app: server.app:app
+port: 7860
+
+tasks:
+  - id: task1
+    name: Simple Price Negotiation
+    difficulty: easy
+    description: Negotiate price with a single supplier. Minimize cost below market price.
+    max_rounds: 8
+    grader: programmatic
+
+  - id: task2
+    name: Cost vs Delivery Tradeoff
+    difficulty: medium
+    description: Balance cost savings against delivery speed with a premium fast supplier.
+    max_rounds: 10
+    grader: programmatic
+
+  - id: task3
+    name: Multi-Supplier Selection
+    difficulty: hard
+    description: Identify the optimal supplier among 3 and negotiate the best deal.
+    max_rounds: 12
+    grader: programmatic
+
+action_space:
+  type: structured
+  fields:
+    - name: action_type
+      type: enum
+      values: [accept, reject, counter]
+    - name: counter_price
+      type: float
+      optional: true
+    - name: target_supplier_id
+      type: int
+      optional: true
+
+observation_space:
+  fields:
+    - current_price
+    - market_price
+    - rounds_left
+    - supplier_id
+    - delivery_days
+    - task_id
+    - text_summary
+
+reward:
+  type: continuous
+  range: [-1.0, 1.0]
+  description: >
+    Step-wise reward based on price improvement, deal quality,
+    round efficiency, and penalties for invalid actions.
