@@ -248,6 +248,11 @@ def _reset_log_state():
     _last_supplier_price  = None
     _last_agent_counter   = None
     _supplier_held_rounds = 0
+    # Clear LLM clamp references so stale prices from previous episode
+    # don't influence the first counter of the new episode
+    call_llm.last_market  = None
+    call_llm.last_current = None
+    call_llm.last_price   = None
 
 
 def _log(tag: str, msg: str):
@@ -383,9 +388,11 @@ async def step_override(request: Request):
             if len(LAST_PRICES) >= 3 and len(set(LAST_PRICES[-3:])) == 1:
                 raw["counter_price"] = round(price * 0.97, 2)
 
-        if obs.rounds_left <= 1 or obs.current_price <= obs.market_price * 1.03:
+        if obs.rounds_left <= 1 or (
+            obs.current_price <= obs.market_price * 1.03
+            and obs.round_number >= 5
+        ):
             raw = {"action_type": "accept", "counter_price": None}
-
     try:
         action = NegotiationAction(**raw)
     except Exception:
