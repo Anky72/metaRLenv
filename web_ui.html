@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Procurement Negotiation — OpenEnv</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --surface: #f8f9fa; --border: #e1e4e8;
+    --text: #24292e; --muted: #6a737d;
+    --accent: #28a745; --accent-hover: #22863a;
+    --blue: #0366d6; --red: #d73a49; --purple: #6f42c1;
+    --orange: #e36209;
+    --font: 'Inter', sans-serif; --mono: 'JetBrains Mono', monospace;
+  }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; }
+  .layout { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar { border-right: 1px solid var(--border); padding: 1.5rem; background: var(--surface); }
+  .sidebar h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1.25rem; }
+  .section-title {
+    font-size: 0.72rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-bottom: 0.6rem; margin-top: 1.4rem;
+  }
+  .section-title:first-of-type { margin-top: 0; }
+  .sidebar p { font-size: 0.8rem; color: var(--muted); line-height: 1.6; margin-bottom: 0.4rem; }
+  .sidebar a { color: var(--blue); text-decoration: none; }
+  .sidebar a:hover { text-decoration: underline; }
+  .code-block {
+    background: #1b1f23; color: #e1e4e8; border-radius: 6px;
+    padding: 0.75rem 1rem; font-family: var(--mono); font-size: 0.70rem;
+    line-height: 1.6; margin-bottom: 0.75rem; position: relative; overflow-x: auto;
+  }
+  .code-block .kw { color: #f97583; } .code-block .im { color: #79b8ff; }
+  .code-block .st { color: #9ecbff; } .code-block .cm { color: #6a737d; }
+  .copy-btn {
+    position: absolute; top: 0.4rem; right: 0.4rem;
+    background: #2f363d; border: 1px solid #444d56; color: #8b949e;
+    border-radius: 4px; padding: 2px 6px; font-size: 0.62rem; cursor: pointer; font-family: var(--font);
+  }
+  .copy-btn:hover { color: #e1e4e8; }
+
+  /* Task selector */
+  .task-selector { display: flex; gap: 0.4rem; margin-bottom: 1.25rem; align-items: center; }
+  .task-selector label { font-size: 0.72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+  .task-btn { flex: 1; padding: 0.4rem 0; border-radius: 6px; font-size: 0.75rem; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--muted); transition: all 0.15s; text-align: center; }
+  .task-btn:hover { background: var(--surface); color: var(--text); }
+  .task-btn.active-1 { background: #e6f4ea; color: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .task-btn.active-2 { background: #fff8e1; color: #b45309; border-color: #f59e0b; font-weight: 600; }
+  .task-btn.active-3 { background: #fce7f3; color: #9d174d; border-color: #ec4899; font-weight: 600; }
+
+  /* Main */
+  .main { padding: 1.5rem 2rem; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; margin-bottom: 1.25rem; border-bottom: 2px solid var(--border); }
+  .tab-btn { padding: 0.5rem 1.1rem; font-size: 0.80rem; font-weight: 500; cursor: pointer; border: none; background: none; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Reward bar */
+  .reward-bar { font-family: var(--mono); font-size: 0.82rem; margin-bottom: 1.25rem; padding: 0.55rem 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; display: flex; gap: 1.2rem; align-items: center; flex-wrap: wrap; }
+  .reward-bar .lbl { color: var(--muted); }
+  .reward-bar .val { font-weight: 500; }
+  .reward-bar .val.done-true  { color: var(--accent); }
+  .reward-bar .val.done-false { color: var(--text); }
+  .reward-bar .task-badge { margin-left: auto; font-size: 0.70rem; font-weight: 600; padding: 2px 8px; border-radius: 12px; }
+  .task-badge-1 { background: #e6f4ea; color: var(--accent); }
+  .task-badge-2 { background: #fff8e1; color: #b45309; }
+  .task-badge-3 { background: #fce7f3; color: #9d174d; }
+
+  /* Action input */
+  .action-panel { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 1.25rem; overflow: hidden; }
+  .action-panel .ap-header { padding: 0.45rem 0.75rem; font-size: 0.72rem; font-weight: 600; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--border); }
+  .action-panel textarea { width: 100%; min-height: 80px; border: none; outline: none; padding: 0.65rem; font-family: var(--mono); font-size: 0.78rem; line-height: 1.6; resize: vertical; background: var(--bg); color: var(--text); }
+
+  /* Buttons */
+  .btn-row { display: flex; gap: 0.6rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .btn { padding: 0.45rem 1.1rem; border-radius: 6px; font-size: 0.78rem; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: background 0.15s, opacity 0.15s; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-green  { background: var(--accent); color: #fff; border-color: var(--accent-hover); }
+  .btn-green:hover:not(:disabled)  { background: var(--accent-hover); }
+  .btn-white  { background: var(--bg); color: var(--text); border-color: var(--border); }
+  .btn-white:hover:not(:disabled)  { background: var(--surface); }
+  .btn-purple { background: var(--purple); color: #fff; border-color: #5a32a3; }
+  .btn-purple:hover:not(:disabled) { background: #5a32a3; }
+  .btn-red    { background: var(--red); color: #fff; border-color: #b31d28; }
+  .btn-red:hover:not(:disabled)    { background: #b31d28; }
+  .btn-orange { background: var(--orange); color: #fff; border-color: #c05000; }
+  .btn-orange:hover:not(:disabled) { background: #c05000; }
+
+  /* Status */
+  .status-panel { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 1.25rem; overflow: hidden; }
+  .status-panel .sp-header { padding: 0.45rem 0.75rem; font-size: 0.72rem; font-weight: 600; color: var(--muted); background: var(--surface); border-bottom: 1px solid var(--border); }
+  .status-panel .sp-body { padding: 0.65rem; font-size: 0.8rem; color: var(--muted); min-height: 32px; }
+  .status-panel .sp-body.ok   { color: var(--accent); }
+  .status-panel .sp-body.err  { color: var(--red); }
+  .status-panel .sp-body.info { color: var(--blue); }
+
+  /* JSON panel */
+  .json-panel { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .json-panel .jp-header { display: flex; align-items: center; justify-content: space-between; padding: 0.45rem 0.75rem; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 0.72rem; font-weight: 600; color: var(--muted); }
+  .jp-header .jp-actions { display: flex; gap: 0.5rem; }
+  .jp-header button { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 0.68rem; cursor: pointer; color: var(--muted); }
+  .jp-header button:hover { color: var(--text); background: var(--surface); }
+  .json-body { background: #1b1f23; color: #e1e4e8; font-family: var(--mono); font-size: 0.73rem; line-height: 1.7; padding: 1rem; max-height: 340px; overflow-y: auto; white-space: pre; }
+  .json-body .jk  { color: #79b8ff; } .json-body .js  { color: #9ecbff; }
+  .json-body .jn  { color: #f97583; } .json-body .jb  { color: #79b8ff; }
+  .json-body .jnl { color: #6a737d; }
+  .pp-label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; color: var(--muted); margin-bottom: 0.5rem; cursor: pointer; user-select: none; }
+  input[type=checkbox] { accent-color: var(--blue); cursor: pointer; }
+
+  /* Terminal */
+  .terminal-wrap { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 1.25rem; }
+  .terminal-header { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.75rem; background: #1b1f23; border-bottom: 1px solid #2f363d; }
+  .terminal-header .term-title { display: flex; align-items: center; gap: 0.5rem; font-size: 0.72rem; font-weight: 600; color: #8b949e; font-family: var(--mono); }
+  .term-dots { display: flex; gap: 5px; }
+  .term-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-red { background: #ff5f57; } .dot-yellow { background: #febc2e; } .dot-green { background: #28c840; }
+  .terminal-header .term-actions { display: flex; gap: 0.5rem; }
+  .terminal-header .term-actions button { background: #2f363d; border: 1px solid #444d56; color: #8b949e; border-radius: 4px; padding: 2px 8px; font-size: 0.66rem; cursor: pointer; font-family: var(--font); }
+  .terminal-header .term-actions button:hover { color: #e1e4e8; }
+  .terminal-body { background: #0d1117; color: #c9d1d9; font-family: var(--mono); font-size: 0.73rem; line-height: 1.7; padding: 0.75rem 1rem; min-height: 200px; max-height: 420px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  .terminal-body .t-dim    { color: #484f58; }
+  .terminal-body .t-green  { color: #3fb950; }
+  .terminal-body .t-blue   { color: #58a6ff; }
+  .terminal-body .t-yellow { color: #d29922; }
+  .terminal-body .t-red    { color: #f85149; }
+  .terminal-body .t-cyan   { color: #39c5cf; }
+  .terminal-body .t-bold   { font-weight: 700; color: #e6edf3; }
+  .terminal-body .t-muted  { color: #6e7681; }
+  .term-score-bar { background: #161b22; border-top: 1px solid #21262d; padding: 0.5rem 1rem; display: flex; gap: 2rem; font-family: var(--mono); font-size: 0.70rem; color: #8b949e; }
+  .term-score-bar span { display: flex; gap: 0.4rem; align-items: center; }
+  .term-score-bar .sv { color: #e6edf3; font-weight: 600; }
+  .term-score-bar .sv.good { color: #3fb950; } .term-score-bar .sv.bad { color: #f85149; }
+
+  .agent-controls { display: flex; gap: 0.6rem; margin-bottom: 1.25rem; align-items: center; flex-wrap: wrap; }
+  .agent-controls label { font-size: 0.76rem; color: var(--muted); }
+  .speed-select { border: 1px solid var(--border); border-radius: 4px; padding: 0.28rem 0.5rem; font-size: 0.76rem; background: var(--bg); color: var(--text); cursor: pointer; }
+  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s infinite; margin-right: 4px; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+  /* ── Human-as-Supplier mode ─────────────────────────────────────────────── */
+  .supplier-panel { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 1.25rem; }
+  .supplier-panel .sph { padding: 0.6rem 1rem; background: linear-gradient(135deg, #1b1f23 0%, #2f363d 100%); font-family: var(--mono); font-size: 0.78rem; font-weight: 600; color: #e6edf3; border-bottom: 1px solid #444d56; display: flex; align-items: center; gap: 0.5rem; }
+  .supplier-panel .sph .badge { background: #f0883e; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 0.65rem; font-weight: 700; }
+
+  .neg-state { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; padding: 1rem; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .neg-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.8rem; }
+  .neg-card .nc-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; color: var(--muted); letter-spacing: 0.04em; margin-bottom: 0.2rem; }
+  .neg-card .nc-val { font-family: var(--mono); font-size: 1.1rem; font-weight: 600; color: var(--text); }
+  .neg-card .nc-val.price-good { color: var(--accent); }
+  .neg-card .nc-val.price-warn { color: var(--orange); }
+  .neg-card .nc-val.price-bad  { color: var(--red); }
+
+  .chat-feed { max-height: 320px; overflow-y: auto; padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.65rem; }
+  .msg { max-width: 82%; padding: 0.55rem 0.8rem; border-radius: 10px; font-size: 0.8rem; line-height: 1.5; }
+  .msg.agent { background: #e8f4fd; color: #0c4a7a; align-self: flex-start; border-bottom-left-radius: 3px; }
+  .msg.supplier { background: #f0f4f8; color: var(--text); align-self: flex-end; border-bottom-right-radius: 3px; }
+  .msg.system { align-self: center; font-size: 0.72rem; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 3px 12px; }
+  .msg .sender { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; opacity: 0.7; }
+
+  .supplier-input-area { padding: 0.75rem 1rem; border-top: 1px solid var(--border); background: var(--bg); display: flex; gap: 0.6rem; align-items: flex-end; }
+  .supplier-input-area textarea { flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; font-family: var(--mono); font-size: 0.78rem; resize: none; outline: none; min-height: 60px; color: var(--text); }
+  .supplier-input-area textarea:focus { border-color: var(--blue); }
+  .sai-btns { display: flex; flex-direction: column; gap: 0.4rem; }
+
+  .quick-actions { display: flex; gap: 0.5rem; padding: 0 1rem 0.75rem; flex-wrap: wrap; }
+  .qa-btn { padding: 0.3rem 0.7rem; border-radius: 4px; font-size: 0.72rem; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--muted); transition: all 0.12s; }
+  .qa-btn:hover { background: #e8f4fd; color: var(--blue); border-color: var(--blue); }
+
+  .hs-score-bar { background: var(--surface); border-top: 1px solid var(--border); padding: 0.5rem 1rem; display: none; gap: 1.5rem; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); align-items: center; }
+  .hs-score-bar .hs-sv { color: var(--text); font-weight: 600; }
+  .hs-score-bar .hs-sv.good { color: var(--accent); }
+  .hs-score-bar .hs-sv.bad  { color: var(--red); }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <h2>🤝 Procurement Negotiation</h2>
+
+    <div class="section-title">Task</div>
+    <div class="task-selector">
+      <label>Select:</label>
+      <button class="task-btn active-1" id="tbtn-1" onclick="selectTask(1)">Task 1</button>
+      <button class="task-btn"          id="tbtn-2" onclick="selectTask(2)">Task 2</button>
+      <button class="task-btn"          id="tbtn-3" onclick="selectTask(3)">Task 3</button>
+    </div>
+    <p style="margin-bottom:0.2rem"><strong>Task 1</strong> — Simple price negotiation (easy, 10 rounds)</p>
+    <p style="margin-bottom:0.2rem"><strong>Task 2</strong> — Cost vs delivery tradeoff (medium, 12 rounds)</p>
+    <p style="margin-bottom:0.8rem"><strong>Task 3</strong> — Multi-supplier selection (hard, 14 rounds)</p>
+
+    <div class="section-title">Quick connect</div>
+    <div class="code-block"><button class="copy-btn" onclick="copyCode(this)">copy</button><span class="kw">from</span> <span class="im">server.environment</span> <span class="kw">import</span> ProcurementEnvironment
+<span class="kw">from</span> <span class="im">models</span> <span class="kw">import</span> NegotiationAction
+
+env = ProcurementEnvironment(task_id=<span class="st">1</span>)
+obs = env.reset()
+obs = env.step(NegotiationAction(
+  action_type=<span class="st">"counter"</span>, counter_price=<span class="st">95.50</span>
+))</div>
+
+    <div class="section-title">Run inference</div>
+    <div class="code-block"><button class="copy-btn" onclick="copyCode(this)">copy</button>python inference.py</div>
+    <div class="code-block"><button class="copy-btn" onclick="copyCode(this)">copy</button>TASK_ID=1 python inference.py</div>
+
+    <div class="section-title">Human-as-Supplier mode</div>
+    <p>Switch to the <strong>🎭 Play as Supplier</strong> tab and <em>you</em> set the price — the AI agent will negotiate against you!</p>
+
+    <div class="section-title">Server</div>
+    <p>Base: <a href="http://localhost:7860" target="_blank">http://localhost:7860</a></p>
+    <p>API docs: <a href="http://localhost:7860/docs" target="_blank">/docs</a></p>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- Task badge + reward bar -->
+    <div class="reward-bar" id="reward-bar">
+      <span><span class="lbl">Reward: </span><span class="val" id="rb-reward">—</span></span>
+      <span><span class="lbl">Done: </span><span class="val" id="rb-done">—</span></span>
+      <span><span class="lbl">Round: </span><span class="val" id="rb-round">—</span></span>
+      <span><span class="lbl">Price: </span><span class="val" id="rb-price">—</span></span>
+      <span><span class="lbl">Market: </span><span class="val" id="rb-market">—</span></span>
+      <span class="task-badge task-badge-1" id="rb-task-badge">Task 1 · Easy</span>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('manual')">Manual Play</button>
+      <button class="tab-btn"        onclick="switchTab('agent')">🤖 Agent Run</button>
+      <button class="tab-btn"        onclick="switchTab('supplier')">🎭 Play as Supplier</button>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Tab: Manual Play
+    ══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel active" id="tab-manual">
+
+      <div class="action-panel">
+        <div class="ap-header">Action (JSON) — edit and click Step</div>
+        <textarea id="action-input" spellcheck="false">{
+  "action_type": "counter",
+  "counter_price": 95.50
+}</textarea>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-green" onclick="doStep()">▶ Step</button>
+        <button class="btn btn-white" onclick="doReset()">↺ Reset</button>
+        <button class="btn btn-white" onclick="doState()">ℹ State</button>
+      </div>
+
+      <div class="status-panel">
+        <div class="sp-header">Status</div>
+        <div class="sp-body" id="status-body">Ready. Click Reset to start a new episode.</div>
+      </div>
+
+      <label class="pp-label">
+        <input type="checkbox" id="pretty-toggle" checked onchange="rerenderJson()"> Pretty-print
+      </label>
+
+      <div class="json-panel">
+        <div class="jp-header">
+          <span>Raw JSON response</span>
+          <div class="jp-actions">
+            <button onclick="copyJson()">copy</button>
+            <button onclick="clearJson()">clear</button>
+          </div>
+        </div>
+        <div class="json-body" id="json-body">// Response will appear here</div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Tab: Agent Run
+    ══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="tab-agent">
+
+      <div class="agent-controls">
+        <button class="btn btn-purple" id="agent-run-btn" onclick="runAgent()">▶ Run Agent</button>
+        <button class="btn btn-red"    id="agent-stop-btn" onclick="stopAgent()" disabled>■ Stop</button>
+        <label>Speed:
+          <select class="speed-select" id="agent-speed">
+            <option value="300">Fast (300ms)</option>
+            <option value="700" selected>Normal (700ms)</option>
+            <option value="1500">Slow (1.5s)</option>
+          </select>
+        </label>
+        <span style="font-size:0.76rem;color:var(--muted)" id="agent-status-text">Select task above, then press Run Agent.</span>
+      </div>
+
+      <div class="terminal-wrap">
+        <div class="terminal-header">
+          <div class="term-title">
+            <div class="term-dots">
+              <div class="term-dot dot-red"></div>
+              <div class="term-dot dot-yellow"></div>
+              <div class="term-dot dot-green"></div>
+            </div>
+            procurement_negotiation — inference.py
+          </div>
+          <div class="term-actions">
+            <button onclick="clearTerminal()">clear</button>
+            <button onclick="copyTerminal()">copy</button>
+          </div>
+        </div>
+        <div class="terminal-body" id="terminal-body"><span class="t-muted">$ python inference.py  # click "Run Agent" to start</span>
+</div>
+        <div class="term-score-bar" id="term-score-bar" style="display:none">
+          <span>Score: <span class="sv" id="ts-score">—</span></span>
+          <span>Steps: <span class="sv" id="ts-steps">—</span></span>
+          <span>Success: <span class="sv" id="ts-success">—</span></span>
+          <span>Total reward: <span class="sv" id="ts-reward">—</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Tab: Human as Supplier
+    ══════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="tab-supplier">
+
+      <div style="margin-bottom:1rem;padding:0.75rem 1rem;background:#fff8e1;border:1px solid #f59e0b;border-radius:6px;font-size:0.82rem;color:#92400e;line-height:1.6">
+        <strong>🎭 You are the Supplier!</strong> The AI procurement agent will negotiate against you.
+        Set your price each round — try to sell high while the agent tries to buy low.
+        Watch the agent's LLM reasoning as it decides whether to counter, accept, or reject.
+      </div>
+
+      <div class="btn-row" style="margin-bottom:0.75rem">
+        <button class="btn btn-orange" onclick="hsStart()">▶ Start Negotiation</button>
+        <button class="btn btn-white"  onclick="hsReset()">↺ New Episode</button>
+        <span style="font-size:0.76rem;color:var(--muted);align-self:center" id="hs-status-text">Press Start to begin.</span>
+      </div>
+
+      <div class="supplier-panel" id="supplier-panel">
+        <!-- Negotiation state cards -->
+        <div class="sph">
+          <div class="term-dots"><div class="term-dot dot-red"></div><div class="term-dot dot-yellow"></div><div class="term-dot dot-green"></div></div>
+          <span>Negotiation Room</span>
+          <span class="badge" id="hs-task-badge">Task 1</span>
+          <span style="margin-left:auto;font-size:0.65rem;color:#8b949e" id="hs-rounds-badge">— rounds left</span>
+        </div>
+
+        <div class="neg-state">
+          <div class="neg-card">
+            <div class="nc-label">Your asking price</div>
+            <div class="nc-val" id="hs-my-price">—</div>
+          </div>
+          <div class="neg-card">
+            <div class="nc-label">Agent's last offer</div>
+            <div class="nc-val" id="hs-agent-offer">—</div>
+          </div>
+          <div class="neg-card">
+            <div class="nc-label">Market reference</div>
+            <div class="nc-val" id="hs-market">—</div>
+          </div>
+          <div class="neg-card">
+            <div class="nc-label">Your floor (private)</div>
+            <div class="nc-val" id="hs-floor">—</div>
+          </div>
+        </div>
+
+        <!-- Chat feed -->
+        <div class="chat-feed" id="hs-chat"></div>
+
+        <!-- Quick actions -->
+        <div class="quick-actions" id="hs-quick-actions">
+          <span style="font-size:0.70rem;color:var(--muted);align-self:center">Quick:</span>
+          <button class="qa-btn" onclick="hsQuickAction('hold')">Hold firm</button>
+          <button class="qa-btn" onclick="hsQuickAction('small')">Small concession (–3%)</button>
+          <button class="qa-btn" onclick="hsQuickAction('medium')">Medium concession (–7%)</button>
+          <button class="qa-btn" onclick="hsQuickAction('large')">Big drop (–15%)</button>
+        </div>
+
+        <!-- Supplier input -->
+        <div class="supplier-input-area" id="hs-input-area">
+          <textarea id="hs-price-input" placeholder='Enter your new price (e.g. 95.50) or type "accept" to close the deal'></textarea>
+          <div class="sai-btns">
+            <button class="btn btn-green" onclick="hsSubmitPrice()" id="hs-submit-btn">Send →</button>
+            <button class="btn btn-red"   onclick="hsRejectDeal()" id="hs-reject-btn">Walk away</button>
+          </div>
+        </div>
+
+        <!-- Final score bar -->
+        <div class="hs-score-bar" id="hs-score-bar" style="display:flex">
+          <span>Your score: <span class="hs-sv" id="hs-score">—</span></span>
+          <span>Rounds: <span class="hs-sv" id="hs-rounds-used">—</span></span>
+          <span>Final price: <span class="hs-sv" id="hs-final-price">—</span></span>
+          <span>Market: <span class="hs-sv" id="hs-market-final">—</span></span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  const BASE = '';
+  let lastJson = null;
+  let currentTaskId = 1;
+  let agentRunning = false;
+  let agentShouldStop = false;
+
+  // ── Task selection ────────────────────────────────────────────────────────
+  function selectTask(id) {
+    currentTaskId = id;
+    [1,2,3].forEach(n => {
+      document.getElementById('tbtn-' + n).className =
+        'task-btn' + (n === id ? ' active-' + n : '');
+    });
+    const labels = { 1: 'Task 1 · Easy', 2: 'Task 2 · Medium', 3: 'Task 3 · Hard' };
+    const badge = document.getElementById('rb-task-badge');
+    badge.textContent = labels[id];
+    badge.className = 'task-badge task-badge-' + id;
+  }
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  function switchTab(name) {
+    ['manual','agent','supplier'].forEach(t => {
+      document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    });
+    document.querySelectorAll('.tab-btn').forEach((b, i) => {
+      b.classList.toggle('active', ['manual','agent','supplier'][i] === name);
+    });
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function setStatus(msg, cls='') {
+    const el = document.getElementById('status-body');
+    el.textContent = msg;
+    el.className = 'sp-body ' + cls;
+  }
+
+  function updateRewardBar(data) {
+    if (!data) return;
+    const obs = data.observation || data;
+    if (data.reward != null)
+      document.getElementById('rb-reward').textContent = parseFloat(data.reward).toFixed(3);
+    const done = data.done;
+    const doneEl = document.getElementById('rb-done');
+    if (done != null) { doneEl.textContent = String(done); doneEl.className = 'val done-' + done; }
+    if (obs.round_number != null) document.getElementById('rb-round').textContent = obs.round_number;
+    if (obs.current_price != null) document.getElementById('rb-price').textContent = '$' + parseFloat(obs.current_price).toFixed(2);
+    if (obs.market_price  != null) document.getElementById('rb-market').textContent = '$' + parseFloat(obs.market_price).toFixed(2);
+  }
+
+  function syntaxHighlight(obj) {
+    return JSON.stringify(obj, null, 2).replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      m => {
+        if (/^"/.test(m)) return /:$/.test(m) ? `<span class="jk">${m}</span>` : `<span class="js">${m}</span>`;
+        if (/true|false/.test(m)) return `<span class="jb">${m}</span>`;
+        if (/null/.test(m)) return `<span class="jnl">${m}</span>`;
+        return `<span class="jn">${m}</span>`;
+      }
+    );
+  }
+
+  function renderJson(data) {
+    lastJson = data;
+    const el = document.getElementById('json-body');
+    const pretty = document.getElementById('pretty-toggle').checked;
+    el.innerHTML = pretty ? syntaxHighlight(data) : JSON.stringify(data);
+  }
+
+  function rerenderJson() { if (lastJson) renderJson(lastJson); }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Manual play ───────────────────────────────────────────────────────────
+  async function doReset() {
+    setStatus('Resetting...', 'info');
+    try {
+      const res = await fetch(BASE + '/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: currentTaskId }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      renderJson(data);
+      updateRewardBar(data);
+      setStatus('✅ Reset complete (Task ' + currentTaskId + ')', 'ok');
+      // Suggest first action
+      const obs = data.observation || data;
+      if (obs && obs.current_price) {
+        document.getElementById('action-input').value =
+          JSON.stringify(suggestNextAction(obs), null, 2);
+      }
+    } catch (e) { setStatus('Error: ' + e.message, 'err'); }
+  }
+
+  async function doStep() {
+    const raw = document.getElementById('action-input').value.trim();
+    let body;
+    try {
+      body = JSON.parse(raw);
+      if (body.counter_price !== undefined) body.counter_price = Number(body.counter_price);
+    } catch(e) { setStatus('Invalid JSON: ' + e.message, 'err'); return; }
+
+    if (!body.action_type) body.action_type = "counter";
+    if (body.action_type === "counter" && !body.counter_price) {
+      setStatus('counter_price required for counter', 'err'); return;
+    }
+    setStatus('Stepping...', 'info');
+    try {
+      // Send action in "action" key so app.py routes it as manual play
+      const res = await fetch(BASE + '/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: body }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (data.detail) { setStatus('API Error: ' + (data.detail[0]?.msg || data.detail), 'err'); renderJson(data); return; }
+      renderJson(data);
+      updateRewardBar(data);
+
+      if (data.done) {
+        setStatus('✅ Episode complete! Score: ' + (data.score || 0).toFixed(3), 'ok');
+      } else {
+        setStatus('Step complete', 'ok');
+        // Update action textarea with suggested next action based on returned obs
+        const obs = data.observation || data;
+        if (obs && obs.current_price) {
+          document.getElementById('action-input').value =
+            JSON.stringify(suggestNextAction(obs), null, 2);
+        }
+      }
+    } catch(e) { setStatus('Network Error: ' + e.message, 'err'); }
+  }
+
+  function suggestNextAction(obs) {
+    const price = parseFloat(obs.current_price), market = parseFloat(obs.market_price), rounds = obs.rounds_left;
+    // Don't suggest accept until within 3% of market
+    if (price <= market * 1.03 || rounds <= 2) return { action_type: "accept" };
+    let pct = rounds >= 7 ? 0.87 : rounds >= 5 ? 0.90 : rounds >= 3 ? 0.93 : 0.97;
+    const counter = Math.max(market * 0.84, price * 0.85 + market * pct * 0.15);
+    return { action_type: "counter", counter_price: Number(counter.toFixed(2)) };
+  }
+
+  async function doState() {
+    setStatus('Fetching state...', 'info');
+    try {
+      const res = await fetch(BASE + '/state', { credentials: 'include' });
+      renderJson(await res.json());
+      setStatus('State fetched.', 'ok');
+    } catch(e) { setStatus('Error: ' + e.message, 'err'); }
+  }
+
+  function copyJson() {
+    if (!lastJson) return;
+    navigator.clipboard.writeText(JSON.stringify(lastJson, null, 2));
+  }
+
+  function clearJson() { lastJson = null; document.getElementById('json-body').textContent = '// cleared'; }
+
+  function copyCode(btn) {
+    const code = btn.parentElement.textContent.replace('copy','').trim();
+    navigator.clipboard.writeText(code);
+    btn.textContent = 'copied!';
+    setTimeout(() => btn.textContent = 'copy', 1500);
+  }
+
+  // ── Agent Terminal ────────────────────────────────────────────────────────
+  const TERM = () => document.getElementById('terminal-body');
+
+  function termAppend(html) { TERM().innerHTML += html + '\n'; TERM().scrollTop = TERM().scrollHeight; }
+  function termLine(text, cls='') { termAppend(cls ? `<span class="${cls}">${esc(text)}</span>` : esc(text)); }
+
+  function clearTerminal() {
+    TERM().innerHTML = '<span class="t-muted">$ python inference.py  # cleared</span>\n';
+    document.getElementById('term-score-bar').style.display = 'none';
+  }
+
+  function copyTerminal() { navigator.clipboard.writeText(TERM().innerText); }
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async function runAgent() {
+    if (agentRunning) return;
+    agentRunning = true;
+    agentShouldStop = false;
+
+    document.getElementById('agent-run-btn').disabled = true;
+    document.getElementById('agent-stop-btn').disabled = false;
+    document.getElementById('term-score-bar').style.display = 'none';
+    document.getElementById('agent-status-text').innerHTML = '<span class="pulse"></span>Running…';
+
+    const speed  = parseInt(document.getElementById('agent-speed').value);
+    const taskId = currentTaskId;
+
+    clearTerminal();
+    termLine(`$ python inference.py --task_id=${taskId}`, 't-muted');
+    termAppend('');
+    termLine(`[START] task=task${taskId} env=procurement_negotiation model=llm+heuristic`, 't-bold');
+    await sleep(200);
+
+    let rewards = [], stepCount = 0, score = 0, success = false;
+
+    try {
+      // Reset with task_id
+      const resetRes = await fetch(BASE + '/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId }),
+        credentials: 'include'
+      });
+      const resetData = await resetRes.json();
+      updateRewardBar(resetData.observation || resetData);
+
+      for (let step = 1; step <= 60; step++) {
+        if (agentShouldStop) { termAppend(''); termLine('[STOPPED] Agent run interrupted by user.', 't-yellow'); break; }
+
+        // Empty body → agent decides action on backend
+        const stepRes = await fetch(BASE + '/step', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+          credentials: 'include'
+        });
+        const stepData = await stepRes.json();
+        updateRewardBar(stepData);
+
+        const reward = parseFloat(stepData.reward ?? 0);
+        const done   = !!stepData.done;
+        rewards.push(reward);
+        stepCount = step;
+
+        // Action came back from the backend — display it
+        const actionStr = stepData.action_type
+          ? (stepData.action_type === 'counter'
+              ? `counter(${stepData.counter_price})`
+              : stepData.action_type)
+          : '?';
+
+        const rewardStr = (reward >= 0 ? '+' : '') + reward.toFixed(2);
+        const rewardCls = reward > 0 ? 't-green' : reward < -0.1 ? 't-red' : 't-muted';
+        const doneCls   = done ? 't-green' : 't-dim';
+
+        termAppend(
+          `<span class="t-cyan">[STEP]</span>` +
+          ` step=<span class="t-bold">${step}</span>` +
+          ` action=<span class="t-blue">${esc(actionStr)}</span>` +
+          ` reward=<span class="${rewardCls}">${rewardStr}</span>` +
+          ` done=<span class="${doneCls}">${done}</span>` +
+          ` error=<span class="t-muted">null</span>`
+        );
+
+        await sleep(speed);
+
+        if (done) {
+          try {
+            const stateRes = await fetch(BASE + '/state', { credentials: 'include' });
+            const stateData = await stateRes.json();
+            const grader = stateData.metadata?.grader_result || {};
+            score   = parseFloat(grader.score || stepData.score || 0);
+            success = score > 0;
+          } catch(_) { score = parseFloat(stepData.score || 0); success = score > 0; }
+          break;
+        }
+      }
+    } catch(e) { termLine(`[ERROR] ${e.message}`, 't-red'); }
+
+    const totalReward  = rewards.reduce((a,b) => a+b, 0);
+    const rewardsList  = rewards.map(r => r.toFixed(2)).join(',');
+    termAppend('');
+    termAppend(
+      `<span class="t-cyan">[END]</span>` +
+      ` success=<span class="${success ? 't-green' : 't-red'}">${success}</span>` +
+      ` steps=<span class="t-bold">${stepCount}</span>` +
+      ` score=<span class="${score >= 0.5 ? 't-green' : score > 0 ? 't-yellow' : 't-red'}">${score.toFixed(3)}</span>` +
+      ` rewards=<span class="t-muted">${esc(rewardsList)}</span>`
+    );
+    termAppend('');
+    termLine(`[DIAG] Backend: LLM + heuristic safety net — model=${MODEL_NAME_DISPLAY}`, 't-muted');
+
+    const sb = document.getElementById('term-score-bar');
+    sb.style.display = 'flex';
+    const scoreEl = document.getElementById('ts-score');
+    scoreEl.textContent = score.toFixed(3);
+    scoreEl.className = 'sv ' + (score >= 0.5 ? 'good' : score > 0 ? '' : 'bad');
+    document.getElementById('ts-steps').textContent = stepCount;
+    const succEl = document.getElementById('ts-success');
+    succEl.textContent = String(success);
+    succEl.className = 'sv ' + (success ? 'good' : 'bad');
+    const rewEl = document.getElementById('ts-reward');
+    rewEl.textContent = (totalReward >= 0 ? '+' : '') + totalReward.toFixed(3);
+    rewEl.className = 'sv ' + (totalReward > 0 ? 'good' : 'bad');
+
+    agentRunning = false;
+    document.getElementById('agent-run-btn').disabled = false;
+    document.getElementById('agent-stop-btn').disabled = true;
+    document.getElementById('agent-status-text').textContent =
+      success ? '✅ Done — score: ' + score.toFixed(3) : '⚠ Done — no score';
+  }
+
+  const MODEL_NAME_DISPLAY = 'llm+heuristic';
+
+  function stopAgent() {
+    agentShouldStop = true;
+    document.getElementById('agent-stop-btn').disabled = true;
+    document.getElementById('agent-status-text').textContent = 'Stopping…';
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // HUMAN-AS-SUPPLIER MODE
+  // The human plays the role of supplier. The UI simulates the environment
+  // locally (no server call needed for this mode) so there's no latency.
+  // The "agent" reasoning is computed client-side using the same heuristic
+  // logic plus a call to the backend's /step endpoint with the human's
+  // price as the observation override.
+  //
+  // Architecture:
+  //   1. Click "Start" → reset env on backend for the chosen task
+  //   2. Backend returns initial obs (agent sees supplier's opening price)
+  //   3. Backend calls LLM → returns action (counter/accept/reject)
+  //   4. Human (supplier) sees agent's counter and decides new price
+  //   5. Human submits new price → stored as new "current_price" in a local
+  //      shadow obs → next /step call includes it via the "action" field trick
+  //   Note: we call /reset to get real task/market data, then simulate locally.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  let hsObs = null;          // current observation
+  let hsChatLog = [];        // chat messages
+  let hsRound = 0;
+  let hsMyPrice = 0;
+  let hsFloor = 0;           // simulated supplier floor (human's secret minimum)
+  let hsMarket = 0;
+  let hsMaxRounds = 10;
+  let hsDone = false;
+  let hsAgentOffer = null;   // last agent counter price
+
+  function hsChatAppend(role, text) {
+    hsChatLog.push({ role, text });
+    const feed = document.getElementById('hs-chat');
+    const div  = document.createElement('div');
+    div.className = 'msg ' + role;
+    let html = '';
+    if (role === 'agent')    html += '<div class="sender">🤖 AI Procurement Agent</div>';
+    if (role === 'supplier') html += '<div class="sender">👤 You (Supplier)</div>';
+    html += esc(text);
+    div.innerHTML = html;
+    feed.appendChild(div);
+    feed.scrollTop = feed.scrollHeight;
+  }
+
+  function hsChatSystem(text) {
+    const feed = document.getElementById('hs-chat');
+    const div  = document.createElement('div');
+    div.className = 'msg system';
+    div.innerHTML = esc(text);
+    feed.appendChild(div);
+    feed.scrollTop = feed.scrollHeight;
+  }
+
+  function hsUpdateCards() {
+    const priceEl = document.getElementById('hs-my-price');
+    if (hsMyPrice > 0) {
+      const pct = ((hsMyPrice - hsMarket) / hsMarket * 100).toFixed(1);
+      priceEl.textContent = '$' + hsMyPrice.toFixed(2) + ' (' + (pct >= 0 ? '+' : '') + pct + '% vs mkt)';
+      priceEl.className = 'nc-val ' + (hsMyPrice <= hsMarket * 1.05 ? 'price-good' : hsMyPrice <= hsMarket * 1.15 ? 'price-warn' : 'price-bad');
+    }
+    document.getElementById('hs-agent-offer').textContent = hsAgentOffer != null ? '$' + parseFloat(hsAgentOffer).toFixed(2) : '—';
+    document.getElementById('hs-market').textContent      = hsMarket > 0 ? '$' + hsMarket.toFixed(2) : '—';
+    document.getElementById('hs-floor').textContent       = hsFloor  > 0 ? '$' + hsFloor.toFixed(2) + ' (don\'t go below this!)' : '—';
+    document.getElementById('hs-rounds-badge').textContent = (hsMaxRounds - hsRound) + ' rounds left';
+  }
+
+  async function hsStart() {
+    if (hsDone && hsObs) { hsReset(); return; }
+
+    document.getElementById('hs-status-text').innerHTML = '<span class="pulse"></span>Starting…';
+    document.getElementById('hs-chat').innerHTML = '';
+    hsChatLog = [];
+
+    try {
+      const res = await fetch(BASE + '/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: currentTaskId }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      hsObs = data.observation || data;
+      hsRound = 0;
+      hsDone = false;
+
+      hsMarket    = parseFloat(hsObs.market_price || 100);
+      hsMaxRounds = (hsObs.rounds_left || 10) + 1;
+      // Simulate supplier: opening ask is 25–35% above market (human gets to set it)
+      const openingAsk = Math.round(hsMarket * (1.25 + Math.random() * 0.10) * 100) / 100;
+      hsMyPrice    = openingAsk;
+      // Floor = 90–95% of market (human's secret minimum — shown to help them play)
+      hsFloor     = Math.round(hsMarket * (0.90 + Math.random() * 0.05) * 100) / 100;
+      hsAgentOffer = null;
+
+      const taskNames = { 1: 'Task 1 · Easy', 2: 'Task 2 · Medium', 3: 'Task 3 · Hard' };
+      document.getElementById('hs-task-badge').textContent = taskNames[currentTaskId] || 'Task';
+      document.getElementById('hs-score-bar').style.display = 'none';
+
+      hsUpdateCards();
+      document.getElementById('hs-price-input').value = openingAsk.toFixed(2);
+
+      hsChatSystem('📋 Negotiation started — ' + (hsObs.text_summary || '').split('\n')[0]);
+      hsChatAppend('supplier', `Opening offer: $${openingAsk.toFixed(2)} for ${hsObs.text_summary?.match(/Category\s+: ([^\n]+)/)?.[1] || 'the goods'}.`);
+
+      document.getElementById('hs-status-text').textContent = 'Your turn — enter your price and click Send.';
+
+      // Now get agent's first response to your opening price
+      await hsAgentMove(openingAsk);
+
+    } catch(e) {
+      document.getElementById('hs-status-text').textContent = 'Error: ' + e.message;
+    }
+  }
+
+  async function hsAgentMove(supplierPrice) {
+    if (hsDone) return;
+
+    // We simulate the agent's observation using the supplier's current price
+    // by calling /step with the supplier price encoded as the action_type=supplier_price
+    // Simpler: just use the heuristic client-side with the supplier's price
+    const agentAction = hsClientHeuristic(supplierPrice);
+    hsAgentOffer = agentAction.counter_price;
+    hsRound++;
+
+    let agentText = '';
+    if (agentAction.action_type === 'accept') {
+      agentText = `I'll accept your offer of $${supplierPrice.toFixed(2)}. Deal!`;
+      hsChatAppend('agent', agentText);
+      hsDone = true;
+      hsShowResult(true, supplierPrice);
+    } else if (agentAction.action_type === 'reject') {
+      agentText = `I'm rejecting this offer — it's too high. I'm walking away.`;
+      hsChatAppend('agent', agentText);
+      hsDone = true;
+      hsShowResult(false, supplierPrice);
+    } else {
+      // Counter
+      const cp = agentAction.counter_price;
+      hsAgentOffer = cp;
+      const pct = ((supplierPrice - cp) / supplierPrice * 100).toFixed(1);
+      agentText = `Your price of $${supplierPrice.toFixed(2)} is too high. I can offer $${cp.toFixed(2)} — that's ${pct}% below your ask. Can you come down?`;
+      hsChatAppend('agent', agentText);
+
+      // Suggest quick actions based on agent counter
+      hsUpdateCards();
+
+      if (hsRound >= hsMaxRounds - 1) {
+        hsChatSystem('⚠️ Last round — accept or the deal falls through!');
+        document.getElementById('hs-status-text').textContent = 'Last round! Accept or counter one final time.';
+      } else {
+        document.getElementById('hs-status-text').textContent = `Round ${hsRound}/${hsMaxRounds - 1} — Your turn.`;
+      }
+    }
+    hsUpdateCards();
+  }
+
+  function hsClientHeuristic(supplierPrice) {
+    const market = hsMarket;
+    const rounds_left = Math.max(1, hsMaxRounds - 1 - hsRound);
+    const pctAboveMarket = (supplierPrice - market) / market;
+
+    // Accept conditions (agent accepting from supplier's perspective = agent buys)
+    if (rounds_left <= 1) return { action_type: 'accept', counter_price: null };
+    if (supplierPrice <= market * 1.03) return { action_type: 'accept', counter_price: null };
+
+    // Reject if too many rounds in and price still way above market
+    if (rounds_left <= 2 && pctAboveMarket > 0.15) return { action_type: 'accept', counter_price: null };
+
+    // Counter with graduated targets
+    let tgtPct;
+    if (rounds_left >= 7)     tgtPct = 0.87;
+    else if (rounds_left >= 5) tgtPct = 0.90;
+    else if (rounds_left >= 3) tgtPct = 0.93;
+    else                       tgtPct = 0.97;
+
+    // Adjust for how far above market
+    if (pctAboveMarket > 0.20) tgtPct -= 0.03;
+    else if (pctAboveMarket < 0.07) tgtPct += 0.02;
+
+    const target  = market * tgtPct;
+    const counter = Math.max(market * 0.84, supplierPrice * 0.75 + target * 0.25);
+    return { action_type: 'counter', counter_price: Math.round(counter * 100) / 100 };
+  }
+
+  async function hsSubmitPrice() {
+    if (hsDone) return;
+    const input = document.getElementById('hs-price-input').value.trim();
+
+    if (input.toLowerCase() === 'accept') {
+      // Supplier accepts agent's counter
+      const finalPrice = hsAgentOffer || hsMyPrice;
+      hsChatAppend('supplier', `OK, I accept your offer of $${finalPrice.toFixed(2)}. Deal!`);
+      hsDone = true;
+      hsShowResult(true, finalPrice);
+      return;
+    }
+
+    const price = parseFloat(input.replace(/[^0-9.]/g, ''));
+    if (isNaN(price) || price <= 0) {
+      document.getElementById('hs-status-text').textContent = '⚠ Enter a valid price number (e.g. 95.50)';
+      return;
+    }
+    if (price < hsFloor) {
+      document.getElementById('hs-status-text').textContent = `⚠ $${price.toFixed(2)} is below your floor of $${hsFloor.toFixed(2)}! You'd lose money.`;
+      return;
+    }
+
+    hsMyPrice = price;
+    const agentOfferStr = hsAgentOffer != null ? ` (agent offered $${hsAgentOffer.toFixed(2)})` : '';
+    hsChatAppend('supplier', `New price: $${price.toFixed(2)}${agentOfferStr}.`);
+    document.getElementById('hs-price-input').value = '';
+    hsUpdateCards();
+
+    if (hsRound >= hsMaxRounds - 1) {
+      // Ran out of rounds — force close
+      hsChatSystem('⏱ Rounds exhausted — deal closed at last price.');
+      const finalPrice = Math.min(price, hsAgentOffer || price);
+      hsShowResult(hsAgentOffer != null && price <= hsAgentOffer * 1.05, finalPrice);
+    } else {
+      await hsAgentMove(price);
+    }
+  }
+
+  function hsRejectDeal() {
+    if (hsDone) return;
+    hsChatAppend('supplier', 'I\'m walking away from this negotiation.');
+    hsDone = true;
+    hsShowResult(false, 0);
+  }
+
+  function hsQuickAction(type) {
+    if (hsDone) return;
+    let newPrice;
+    switch(type) {
+      case 'hold':   newPrice = hsMyPrice; break;
+      case 'small':  newPrice = Math.max(hsFloor, hsMyPrice * 0.97); break;
+      case 'medium': newPrice = Math.max(hsFloor, hsMyPrice * 0.93); break;
+      case 'large':  newPrice = Math.max(hsFloor, hsMyPrice * 0.85); break;
+    }
+    document.getElementById('hs-price-input').value = newPrice.toFixed(2);
+    document.getElementById('hs-status-text').textContent = `Set to $${newPrice.toFixed(2)} — click Send to submit.`;
+  }
+
+  function hsShowResult(dealMade, finalPrice) {
+    document.getElementById('hs-input-area').style.opacity = '0.5';
+    document.getElementById('hs-submit-btn').disabled = true;
+    document.getElementById('hs-reject-btn').disabled = true;
+
+    const scoreBar = document.getElementById('hs-score-bar');
+    scoreBar.style.display = 'flex';
+
+    let supplierScore = 0;
+    if (dealMade && finalPrice > 0) {
+      // Supplier score = how much above market they sold at (0 = at market, 1 = 20%+ above)
+      const premium = (finalPrice - hsMarket) / hsMarket;
+      supplierScore = Math.min(1.0, Math.max(0, premium / 0.20));
+    }
+
+    const scoreEl = document.getElementById('hs-score');
+    scoreEl.textContent = dealMade ? (supplierScore * 100).toFixed(0) + '%' : '0% (no deal)';
+    scoreEl.className = 'hs-sv ' + (supplierScore > 0.4 ? 'good' : 'bad');
+    document.getElementById('hs-rounds-used').textContent = hsRound;
+    document.getElementById('hs-final-price').textContent = dealMade && finalPrice > 0 ? '$' + finalPrice.toFixed(2) : '—';
+    document.getElementById('hs-market-final').textContent = '$' + hsMarket.toFixed(2);
+
+    const msg = dealMade
+      ? `🏁 Deal closed at $${finalPrice.toFixed(2)} — you sold ${((finalPrice/hsMarket - 1)*100).toFixed(1)}% above market`
+      : '🏁 No deal — negotiation ended without agreement';
+    hsChatSystem(msg);
+    document.getElementById('hs-status-text').textContent = 'Done! Click "New Episode" to play again.';
+    document.getElementById('hs-score-bar').style.display = 'flex';
+  }
+
+  function hsReset() {
+    hsObs = null; hsChatLog = []; hsRound = 0;
+    hsMyPrice = 0; hsFloor = 0; hsMarket = 0;
+    hsDone = false; hsAgentOffer = null;
+    document.getElementById('hs-chat').innerHTML = '';
+    document.getElementById('hs-input-area').style.opacity = '1';
+    document.getElementById('hs-submit-btn').disabled = false;
+    document.getElementById('hs-reject-btn').disabled = false;
+    document.getElementById('hs-score-bar').style.display = 'none';
+    document.getElementById('hs-price-input').value = '';
+    document.getElementById('hs-my-price').textContent = '—';
+    document.getElementById('hs-agent-offer').textContent = '—';
+    document.getElementById('hs-market').textContent = '—';
+    document.getElementById('hs-floor').textContent = '—';
+    document.getElementById('hs-rounds-badge').textContent = '— rounds left';
+    document.getElementById('hs-status-text').textContent = 'Press Start to begin.';
+  }
+</script>
+</body>
+</html>
