@@ -403,6 +403,18 @@ def run_task(task_id: int) -> None:
             if raw is None:
                 raw = heuristic_action(obs, supplier_held_rounds)
 
+            # Hard rule: never accept before round 5 unless price <= 80% of market
+            if (
+                raw.get("action_type") == "accept"
+                and obs.round_number < 5
+                and obs.current_price > obs.market_price * 0.80
+            ):
+                fallback = heuristic_action(obs, supplier_held_rounds)
+                raw = {
+                    "action_type": "counter",
+                    "counter_price": fallback.get("counter_price") or round(obs.market_price * 0.88, 2)
+                }
+
             # Ensure counter always carries a price
             if raw.get("action_type") == "counter" and not raw.get("counter_price"):
                 raw["counter_price"] = heuristic_action(obs, supplier_held_rounds).get(
