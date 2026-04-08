@@ -14,23 +14,42 @@ STDOUT FORMAT:
     [STEP]  step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
     [END]   success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
 """
-import subprocess, sys
+
+# ── Bootstrap: install missing packages BEFORE any other import ───────────────
+import subprocess
+import sys
+import importlib
 
 def _ensure(pkg, import_name=None):
+    """Install pkg if not importable, then force-reload so it's available now."""
+    name = import_name or pkg.split("[")[0]  # strip extras like [core]
     try:
-        __import__(import_name or pkg)
+        importlib.import_module(name)
     except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg, "-q"])
+        print(f"[BOOTSTRAP] Installing {pkg} ...", file=sys.stderr)
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", pkg, "-q",
+             "--user",                       # install to user site (no root needed)
+             "--no-warn-script-location"],   # suppress the PATH warning
+        )
+        # Force Python to find the newly installed package
+        import site
+        importlib.invalidate_caches()
+        user_site = site.getusersitepackages()
+        if user_site not in sys.path:
+            sys.path.insert(0, user_site)
+        importlib.import_module(name)        # raises clearly if still missing
 
 _ensure("openai")
 _ensure("pydantic")
 _ensure("python-dotenv", "dotenv")
 _ensure("openenv-core[core]", "openenv")
+
+# ── Standard imports (all packages guaranteed present now) ────────────────────
 import argparse
 import json
 import os
 import re
-import sys
 import time
 from typing import List, Optional
 
@@ -39,17 +58,21 @@ from openai import OpenAI
 # ── Path setup ────────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ── Config — read from environment (validator injects these at runtime) ────────
-IMAGE_NAME = os.getenv("IMAGE_NAME") # If you are using docker image 
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
-TASK_NAME = os.getenv("MY_ENV_V4_TASK", "echo")
-BENCHMARK = os.getenv("MY_ENV_V4_BENCHMARK", "my_env_v4")
-USE_HEURISTIC = os.getenv("USE_HEURISTIC", "0").strip() == "1"
+# ── Config — STRICTLY from environment variables (validator injects these) ────
+# Never fall back to personal credentials — the validator verifies its API_KEY
+# was the one used. If vars are missing, run heuristic-only mode instead.
+API_KEY      = os.environ.get("API_KEY")
+API_BASE_URL = os.environ.get("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME   = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+USE_HEURISTIC = os.environ.get("USE_HEURISTIC", "0").strip() == "1"
 
-BENCHMARK  = "procurement_negotiation"
-MAX_STEPS  = 60   # hard cap per task episode
+if not API_KEY or not API_BASE_URL:
+    USE_HEURISTIC = True
+    print("[BOOTSTRAP] API_KEY or API_BASE_URL not set — running heuristic-only mode",
+          file=sys.stderr)
+
+BENCHMARK = "procurement_negotiation"
+MAX_STEPS = 60
 
 # ── Diagnostics ───────────────────────────────────────────────────────────────
 print(f"[DEBUG] API_BASE_URL={API_BASE_URL}", file=sys.stderr)
@@ -57,14 +80,13 @@ print(f"[DEBUG] API_KEY exists={bool(API_KEY)}", file=sys.stderr)
 print(f"[DEBUG] MODEL_NAME={MODEL_NAME}", file=sys.stderr)
 print(f"[DEBUG] USE_HEURISTIC={USE_HEURISTIC}", file=sys.stderr)
 
-# ── LLM diagnostic counters ───────────────────────────────────────────────────
 _llm_calls   = 0
 _llm_success = 0
 _llm_errors: List[str] = []
 
 
 # =============================================================================
-# STDOUT LOGGING  (matches validator expected format exactly)
+# STDOUT LOGGING
 # =============================================================================
 
 def log_start(task: str, env: str, model: str) -> None:
@@ -113,20 +135,19 @@ RULES:
 STRATEGY:
 - On round 1, ALWAYS start at 86-88% of the MARKET PRICE shown — NOT near the supplier's opening price
 - Concede gradually each round — raise your counter by 1-2% of market each round
-- Accept when the supplier's price is within 3-5% of market price
+- NEVER accept before round 5 unless the price is at or below 80% of market price
+- Accept when the supplier's price is within 3-5% of market price AND at least 5 rounds have passed
 - If rounds are running out (2 or fewer left), accept to avoid losing the deal
 - Never counter below 82% of market price — suppliers will not agree
 - Read the "Signal" field — if the supplier is conceding fast, push harder
-- Read the "BATNA" field — if a better supplier exists, consider rejecting
-- For Task 2: prioritise delivery speed — accept up to 8% above market for delivery ≤ 2 days
 - For Task 3: if current supplier price is >20% above market, REJECT and switch
 
 Return ONLY the JSON. No explanation, no markdown, no extra text.
-
 """
 
+
 # =============================================================================
-# LLM CALL  (OpenAI client passed in — created once per task in run_task)
+# LLM CALL
 # =============================================================================
 
 def call_llm(
@@ -137,17 +158,12 @@ def call_llm(
     last_current: Optional[float] = None,
     last_price: Optional[float] = None,
 ) -> Optional[dict]:
-    """
-    Call the LLM via the hackathon LiteLLM proxy and parse a NegotiationAction.
-    Returns a dict with action_type / counter_price, or None on failure.
-    """
     global _llm_calls, _llm_success
 
     if USE_HEURISTIC:
         return None
 
     _llm_calls += 1
-
     MAX_RETRIES  = 3
     RETRY_DELAYS = [5, 10, 20]
 
@@ -173,7 +189,7 @@ def call_llm(
 
             action = json.loads(match.group())
             atype  = str(action.get("action_type", "counter")).lower().strip()
-            if "accept" in atype:   atype = "accept"
+            if   "accept" in atype: atype = "accept"
             elif "reject" in atype: atype = "reject"
             else:                   atype = "counter"
 
@@ -192,17 +208,14 @@ def call_llm(
                 "counter_price": round(price, 2) if atype == "counter" else None,
             }
 
-            # Clamp LLM counter price to a sensible range
             if atype == "counter" and result["counter_price"] is not None:
                 upper_bound = (last_current or result["counter_price"]) * 0.97
                 lower_bound = (last_market  or fallback_price / 0.90) * 0.82
                 clamped = round(max(lower_bound, min(upper_bound, result["counter_price"])), 2)
-                # Nudge down slightly if stuck on the same price
                 if last_price is not None and last_price == clamped:
                     clamped = round(clamped * 0.98, 2)
                 result["counter_price"] = clamped
 
-            # Carry target_supplier_id for task-3 reject actions
             if atype == "reject":
                 tid = action.get("target_supplier_id")
                 if tid is not None:
@@ -213,20 +226,11 @@ def call_llm(
 
         except Exception as e:
             err_str = str(e)
-            is_rate_limit = any(
-                tok in err_str for tok in ("402", "429")
-            ) or any(
-                kw in err_str.lower() for kw in ("rate", "credits")
-            )
+            is_rate_limit = any(tok in err_str for tok in ("402", "429")) or \
+                            any(kw in err_str.lower() for kw in ("rate", "credits"))
 
             if is_rate_limit and attempt < MAX_RETRIES - 1:
-                delay = RETRY_DELAYS[attempt]
-                print(
-                    f"[LLM DEBUG] Call #{_llm_calls} rate-limited "
-                    f"(attempt {attempt + 1}/{MAX_RETRIES}) — retrying in {delay}s …",
-                    file=sys.stderr,
-                )
-                time.sleep(delay)
+                time.sleep(RETRY_DELAYS[attempt])
                 continue
 
             err = f"{type(e).__name__}: {e}"
@@ -243,11 +247,8 @@ def call_llm(
 
 def heuristic_action(obs, supplier_held_rounds: int = 0) -> dict:
     """
-    Rule-based buyer strategy used when the LLM is unavailable or fails.
-
-    Counter-price is anchored to market_price (not the supplier's inflated ask)
-    and rises gradually each round. A small concession is added when the supplier
-    holds firm, to signal good faith and break deadlocks.
+    Rule-based buyer strategy. Never accepts before round 5 unless price
+    is at or below 80% of market (a genuinely exceptional deal).
     """
     current     = obs.current_price
     market      = obs.market_price
@@ -257,27 +258,30 @@ def heuristic_action(obs, supplier_held_rounds: int = 0) -> dict:
     flexibility = obs.supplier_flexibility
     round_num   = getattr(obs, "round_number", 1) or 1
 
-    # Emergency accept on last round
+    # Emergency accept only on the very last round
     if rounds_left <= 1:
         return {"action_type": "accept", "counter_price": None}
 
-    # Task 3: switch to a clearly better supplier if one exists
+    # Task 3: switch to a better supplier — but only once (first round only)
     if task_id == 3:
         available = obs.available_suppliers
-        if len(available) > 1:
+        already_switched = round_num > 1
+        if len(available) > 1 and not already_switched:
             def sup_score(s):
                 price_s    = 1.0 - min(s["current_price"] / (market * 1.5), 1.0)
                 rel_s      = s.get("reliability", 0.5)
                 delivery_s = 1.0 - min(s.get("delivery_days", 10) / 20.0, 1.0)
                 return 0.4 * price_s + 0.4 * rel_s + 0.2 * delivery_s
 
-            current_sup = next((s for s in available if s["supplier_id"] == obs.supplier_id), None)
-            best_sup    = max(available, key=sup_score)
+            current_sup = next(
+                (s for s in available if s["supplier_id"] == obs.supplier_id), None
+            )
+            best_sup = max(available, key=sup_score)
             if (
                 current_sup
                 and best_sup["supplier_id"] != obs.supplier_id
-                and rounds_left >= 5
-                and sup_score(best_sup) > sup_score(current_sup) + 0.06
+                and rounds_left >= 6
+                and sup_score(best_sup) > sup_score(current_sup) + 0.10
             ):
                 return {
                     "action_type": "reject",
@@ -285,51 +289,40 @@ def heuristic_action(obs, supplier_held_rounds: int = 0) -> dict:
                     "target_supplier_id": best_sup["supplier_id"],
                 }
 
-    # Accept thresholds
-    # Accept thresholds — never accept before round 5 unless price is a steal
+    # ── Accept thresholds — NEVER accept before round 5 ──────────────────────
     early_rounds = round_num < 5
 
-    if task_id == 2:
-        if early_rounds:
-            # Only accept early if price is at or below 80% of market (exceptional deal)
-            if current <= market * 0.80:
-                return {"action_type": "accept", "counter_price": None}
-        else:
+    if early_rounds:
+        # Only snap-accept if price is at or below 80% of market (exceptional)
+        if current <= market * 0.80:
+            return {"action_type": "accept", "counter_price": None}
+        # Otherwise fall through to counter no matter what
+    else:
+        if task_id == 2:
             if delivery <= 2 and current <= market * 1.03:
                 return {"action_type": "accept", "counter_price": None}
             if current <= market * 1.02:
-                return {"action_type": "accept", "counter_price": None}
-    else:
-        if early_rounds:
-            if current <= market * 0.80:
                 return {"action_type": "accept", "counter_price": None}
         else:
             if current <= market * 1.03:
                 return {"action_type": "accept", "counter_price": None}
 
-    # Round-based target: starts at 86% of market, climbs ~2% per round
+    # ── Counter price calculation ─────────────────────────────────────────────
     ROUND_TARGETS = {1: 0.88, 2: 0.90, 3: 0.92, 4: 0.93, 5: 0.95, 6: 0.96, 7: 0.97, 8: 0.98}
     target_pct = ROUND_TARGETS.get(round_num, 0.98)
 
-    # Under time pressure — be more generous to guarantee a close
-    if rounds_left <= 3:
-        target_pct = max(target_pct, 0.97)
-    if rounds_left <= 2:
-        target_pct = max(target_pct, 0.98)
+    if rounds_left <= 3: target_pct = max(target_pct, 0.97)
+    if rounds_left <= 2: target_pct = max(target_pct, 0.98)
 
-    # Adjust for supplier flexibility
-    if flexibility > 0.6:
-        target_pct -= 0.02
-    elif flexibility < 0.3:
-        target_pct += 0.02
+    if flexibility > 0.6:   target_pct -= 0.02
+    elif flexibility < 0.3: target_pct += 0.02
 
-    # Nudge offer up slightly each round the supplier holds firm (max +5%)
     if supplier_held_rounds > 0:
         target_pct += min(supplier_held_rounds * 0.01, 0.05)
 
     counter = round(market * target_pct, 2)
-    counter = min(counter, round(current * 0.99, 2))   # must be below current ask
-    counter = max(counter, round(market * 0.82, 2))    # never below floor
+    counter = min(counter, round(current * 0.99, 2))
+    counter = max(counter, round(market * 0.82, 2))
 
     return {"action_type": "counter", "counter_price": counter}
 
@@ -339,7 +332,6 @@ def heuristic_action(obs, supplier_held_rounds: int = 0) -> dict:
 # =============================================================================
 
 def run_task(task_id: int) -> None:
-    """Run one negotiation episode for the given task_id."""
     task_name = f"task{task_id}"
     rewards: List[float] = []
     steps_taken = 0
@@ -348,7 +340,6 @@ def run_task(task_id: int) -> None:
 
     log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
-    # Imports deferred so [START] is always emitted before any import error
     try:
         from server.environment import ProcurementEnvironment
         from models import NegotiationAction
@@ -357,18 +348,13 @@ def run_task(task_id: int) -> None:
         log_end(success=False, steps=0, score=0.0, rewards=[])
         return
 
-    # Build OpenAI client once per task (matches sample script pattern)
-    if not API_KEY:
-     print(f"[DEBUG] No API_KEY set. Set API_KEY env var or use USE_HEURISTIC=1", file=sys.stderr)
-     log_end(success=False, steps=0, score=0.0, rewards=[])
-     return
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    # Build client using ONLY the validator-injected credentials
+    client = None if USE_HEURISTIC else OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
     try:
         env = ProcurementEnvironment(task_id=task_id, seed=42)
         obs = env.reset()
 
-        # LLM price-clamp references (updated each step)
         last_market  = obs.market_price
         last_current = obs.current_price
         last_price: Optional[float] = None
@@ -377,13 +363,12 @@ def run_task(task_id: int) -> None:
         last_supplier_price  = obs.current_price
 
         for step in range(1, MAX_STEPS + 1):
-            obs_text = obs.text_summary or json.dumps(obs.model_dump(), indent=2)
+            obs_text  = obs.text_summary or json.dumps(obs.model_dump(), indent=2)
+            round_num = getattr(obs, "round_number", step) or step
 
-            # Update clamp references before the LLM call
             last_market  = obs.market_price
             last_current = obs.current_price
 
-            # Track consecutive rounds where supplier didn't concede
             if step > 1:
                 if obs.current_price >= last_supplier_price - 0.001:
                     supplier_held_rounds += 1
@@ -391,41 +376,38 @@ def run_task(task_id: int) -> None:
                     supplier_held_rounds = 0
             last_supplier_price = obs.current_price
 
-            # Always try LLM first; heuristic is only a fallback on failure
-            raw = call_llm(
-                client,
-                obs_text,
-                fallback_price=obs.market_price * 0.90,
-                last_market=last_market,
-                last_current=last_current,
-                last_price=last_price,
-            )
+            raw = None
+            if client is not None:
+                raw = call_llm(
+                    client,
+                    obs_text,
+                    fallback_price=obs.market_price * 0.90,
+                    last_market=last_market,
+                    last_current=last_current,
+                    last_price=last_price,
+                )
             if raw is None:
                 raw = heuristic_action(obs, supplier_held_rounds)
 
-            # Hard rule: never accept before round 5 unless price <= 80% of market
+            # ── Hard rule: no accept before round 5 ──────────────────────────
             if (
                 raw.get("action_type") == "accept"
-                and obs.round_number < 5
+                and round_num < 5
                 and obs.current_price > obs.market_price * 0.80
             ):
                 fallback = heuristic_action(obs, supplier_held_rounds)
                 raw = {
-                    "action_type": "counter",
-                    "counter_price": fallback.get("counter_price") or round(obs.market_price * 0.88, 2)
+                    "action_type":   "counter",
+                    "counter_price": fallback.get("counter_price")
+                                     or round(obs.market_price * 0.88, 2),
                 }
 
-            # Ensure counter always carries a price
             if raw.get("action_type") == "counter" and not raw.get("counter_price"):
-                raw["counter_price"] = heuristic_action(obs, supplier_held_rounds).get(
-                    "counter_price", round(obs.market_price * 0.90, 2)
-                )
+                raw["counter_price"] = round(obs.market_price * 0.90, 2)
 
-            # Update last_price for next-step stall detection
             if raw.get("action_type") == "counter":
                 last_price = raw.get("counter_price")
 
-            # Build action string for [STEP] log
             atype = raw.get("action_type", "unknown")
             if atype == "counter":
                 action_str = f"counter({raw.get('counter_price')})"
@@ -478,7 +460,7 @@ def main() -> None:
     parser.add_argument("--task_id", type=int, default=None)
     args = parser.parse_args()
 
-    task_id_env = args.task_id or os.getenv("TASK_ID")
+    task_id_env = args.task_id or os.environ.get("TASK_ID")
     task_ids = [int(task_id_env)] if task_id_env else [1, 2, 3]
 
     for task_id in task_ids:
@@ -487,7 +469,6 @@ def main() -> None:
         except Exception as e:
             print(f"[DEBUG] Fatal error on task{task_id}: {e}", file=sys.stderr)
 
-    # Final diagnostics to stderr
     if _llm_calls > 0:
         rate = _llm_success / _llm_calls * 100
         print(
@@ -498,7 +479,7 @@ def main() -> None:
         if _llm_errors:
             print(f"[DIAG] Errors: {list(dict.fromkeys(_llm_errors))[:2]}", file=sys.stderr)
     else:
-        print("[DIAG] No LLM calls made — USE_HEURISTIC=1 or API_KEY missing", file=sys.stderr)
+        print("[DIAG] No LLM calls made — heuristic-only mode", file=sys.stderr)
 
 
 if __name__ == "__main__":
