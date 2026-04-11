@@ -407,14 +407,4 @@ procurement_negotiation/
 | `USE_HEURISTIC` | `0` | Set to `1` to skip LLM entirely and run heuristic-only mode. Useful when no API key is available. |
 | `TASK_ID` | (all) | Run only task `1`, `2`, or `3`. Omit to run all three sequentially. |
 
-### Free API Endpoint Options
 
-| Provider | `API_BASE_URL` | Key variable | Notes |
-|---|---|---|---|
-| HF Serverless (free) | `https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct/v1` | `HF_TOKEN` | Rate-limited but no credit billing |
-| HF Inference Providers (paid) | `https://router.huggingface.co/v1` | `HF_TOKEN` | Billed against monthly credits — **not recommended** |
-| OpenRouter (free tier) | `https://openrouter.ai/api/v1` | `OPENAI_API_KEY` | Use model `meta-llama/llama-3.1-8b-instruct:free` |
-
----
-
-*Built for the Meta × Scaler OpenEnv Hackathon.*
