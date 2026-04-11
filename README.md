@@ -372,27 +372,23 @@ The LLM handles mid-game rounds (3 ≤ round ≤ max–2) and the heuristic enfo
 
 ```
 procurement_negotiation/
-│
 ├── inference.py          # Agent entry point — run this for evaluation
-├── environment.py        # ProcurementEnvironment (standalone, no server)
 ├── models.py             # NegotiationAction / NegotiationObservation (Pydantic)
-├── tasks.py              # Task configs, supplier personalities, response logic
-├── graders.py            # Scoring functions for Tasks 1, 2, and 3
-├── supplier_data.py      # Real-world supplier catalog reference
 │
 ├── server/
 │   ├── app.py            # FastAPI server (Docker / web UI mode)
-│   └── environment.py    # Server-side environment wrapper
+│   ├── environment.py    # ProcurementEnvironment (standalone, no server)
+│   ├── graders.py        # Scoring functions for Tasks 1, 2, and 3
+│   ├── supplier_data.py  # Real-world supplier catalog reference
+│   └── tasks.py          # Task configs, supplier personalities, response logic
 │
 ├── web_ui.html           # Browser-based negotiation UI
 ├── client.py             # OpenEnv WebSocket client
 │
-├── _env                  # Environment variable template (rename to .env)
 ├── Dockerfile            # Python 3.11-slim; exposes port 7860
 ├── requirements.txt      # Runtime dependencies
 ├── pyproject.toml        # Package metadata
 └── openenv.yaml          # OpenEnv spec (task registry, action/obs schema)
-```
 
 ---
 
