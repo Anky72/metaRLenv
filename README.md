@@ -390,6 +390,8 @@ procurement_negotiation/
 ├── pyproject.toml        # Package metadata
 └── openenv.yaml          # OpenEnv spec (task registry, action/obs schema)
 
+```
+
 ---
 
 ## 8. Environment Variables Reference
