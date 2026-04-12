@@ -15,22 +15,49 @@ tasks:
     name: Simple Price Negotiation
     difficulty: easy
     description: Negotiate price with a single supplier. Minimize cost below market price.
-    max_rounds: 8
+    max_rounds: 10
     grader: programmatic
+    grader_details:
+      function: grade_task1
+      inputs: [final_price, market_price, initial_price, rounds_used, max_rounds, accepted]
+      scoring:
+        negotiation_score: fraction of possible savings captured (opening → 88% of market floor)
+        below_market_bonus: up to +0.15 for closing below market price
+        efficiency_bonus: up to +0.05 for closing early
+        no_deal_score: 0.0
+      score_range: [0.0, 1.0]
 
   - id: task2
     name: Cost vs Delivery Tradeoff
     difficulty: medium
     description: Balance cost savings against delivery speed with a premium fast supplier.
-    max_rounds: 10
+    max_rounds: 12
     grader: programmatic
+    grader_details:
+      function: grade_task2
+      inputs: [final_price, initial_price, final_delivery_days, rounds_used, max_rounds, accepted]
+      scoring:
+        cost_score: 50% weight — full score for ≥15% price reduction from initial
+        delivery_score: 50% weight — scaled against 10-day reference (task2 suppliers open at 2–4 days)
+        efficiency_bonus: up to +0.05 for closing early
+        no_deal_score: 0.0
+      score_range: [0.0, 1.0]
 
   - id: task3
     name: Multi-Supplier Selection
     difficulty: hard
     description: Identify the optimal supplier among 3 and negotiate the best deal.
-    max_rounds: 12
+    max_rounds: 14
     grader: programmatic
+    grader_details:
+      function: grade_task3
+      inputs: [chosen_supplier_id, optimal_supplier_id, final_price, initial_price, market_price, final_delivery_days, accepted]
+      scoring:
+        supplier_score: 70% weight — 1.0 for correct supplier, 0.3 for wrong supplier
+        price_score: 30% weight — fraction of savings captured down to 85% of market floor
+        no_deal_score: 0.0
+        optimal_supplier: highest composite score on price (40%) + reliability (40%) + delivery speed (20%)
+      score_range: [0.0, 1.0]
 
 action_space:
   type: structured
@@ -44,6 +71,7 @@ action_space:
     - name: target_supplier_id
       type: int
       optional: true
+      description: task3 only — supplier_id to switch to on reject
 
 observation_space:
   fields:
@@ -53,11 +81,27 @@ observation_space:
     - supplier_id
     - delivery_days
     - task_id
+    - round_number
+    - initial_price
+    - best_price_seen
+    - best_delivery_seen
+    - supplier_flexibility
+    - previous_action
+    - available_suppliers   # non-empty only in task3
     - text_summary
 
 reward:
-  type: continuous
-  range: [-1.0, 1.0]
-  description: >
-    Step-wise reward based on price improvement, deal quality,
-    round efficiency, and penalties for invalid actions.
+  step_reward:
+    type: continuous
+    range: [-0.5, 2.1]
+    description: >
+      Per-step signal from environment.py. Accept: savings ratio × 2.0 + efficiency bonus (up to 0.1).
+      Counter with improvement: price drop ratio × 1.5. Counter with no improvement: -0.05.
+      Reject (task3 switch): -0.05. Reject (final): -0.5. Invalid counter: -0.3.
+      Round cost: -0.02 × (round / max_rounds) each step. Timeout (rounds exhausted): -0.2.
+  episode_score:
+    type: continuous
+    range: [0.0, 1.0]
+    description: >
+      Final grader score computed at episode end via grade_episode().
+      Stored in state.metadata["grader_result"]. Always 0.0 for no deal.
